@@ -131,8 +131,7 @@ fun RecorderApp(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
                 ) {
                     Text(
-//                        text = "रिवाज़",
-                        text = "Riwaz",
+                        text = "रियाज़",
                         color = saffronColor,
                         fontSize = 32.sp,
                         fontWeight = FontWeight.ExtraBold

@@ -151,7 +151,7 @@ fun RiwazSplashScreen(saffronColor: Color) {
 
             // Animated main title with wavy effect
             AnimatedTitle(
-                text = "रिवाज़",
+                text = "रियाज़",
                 saffronColor = saffronColor,
                 fontSize = 44.sp
             )
