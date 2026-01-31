@@ -38,18 +38,18 @@ graph TD
     Mic --> AudioEngine[Enhanced Audio Analyzer]
     
     subgraph "Audio Analysis Pipeline"
-        AudioEngine --> Pre[Preprocessing (16kHz Resampling)]
+        AudioEngine --> Pre["Preprocessing (16kHz Resampling)"]
         Pre --> Selector{Model Selector}
         
-        Selector -- "Primary (ML)" --> SPICE[SPICE TFLite Model]
-        Selector -- "Fallback (DSP)" --> pYIN[pYIN Algorithm]
+        Selector -- "Primary (ML)" --> SPICE["SPICE TFLite Model"]
+        Selector -- "Fallback (DSP)" --> pYIN["pYIN Algorithm"]
         
-        SPICE --> Pitch[Pitch Frequency (Hz)]
+        SPICE --> Pitch["Pitch Frequency (Hz)"]
         pYIN --> Pitch
         
-        Pitch --> SwarEngine[Swar Recognition Engine]
-        SwarEngine --> Context[Raga Context Rules]
-        Context --> Comparison[Accuracy & Error Logic]
+        Pitch --> SwarEngine["Swar Recognition Engine"]
+        SwarEngine --> Context["Raga Context Rules"]
+        Context --> Comparison["Accuracy & Error Logic"]
     end
     
     Comparison --> UI[Real-time Feedback UI]
