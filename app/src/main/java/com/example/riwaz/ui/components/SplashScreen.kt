@@ -149,8 +149,8 @@ fun RiwazSplashScreen(saffronColor: Color) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Animated main title with wavy effect
-            AnimatedTitle(
+            // Animated main title with wavy effect (Unified for correct Hindi rendering)
+            UnifiedAnimatedTitle(
                 text = "रियाज़",
                 saffronColor = saffronColor,
                 fontSize = 44.sp
@@ -171,6 +171,29 @@ fun RiwazSplashScreen(saffronColor: Color) {
             LoadingDots(saffronColor = saffronColor)
         }
     }
+}
+
+@Composable
+private fun UnifiedAnimatedTitle(text: String, saffronColor: Color, fontSize: TextUnit) {
+    val infiniteTransition = rememberInfiniteTransition(label = "title_wave_unified")
+    
+    val offset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "unified_offset"
+    )
+
+    Text(
+        text = text,
+        color = saffronColor,
+        fontSize = fontSize,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.offset(y = (offset * 6f).dp)
+    )
 }
 
 @Composable
