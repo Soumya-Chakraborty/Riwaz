@@ -1,7 +1,9 @@
 package com.example.riwaz.utils
 
+import android.content.Context
 import android.media.*
 import android.util.Log
+import com.example.riwaz.ml.SequenceAnalysisResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -12,10 +14,15 @@ import kotlin.math.sin
 import kotlin.math.min
 
 /**
- * Audio processor that handles recording, file reading, and analysis
+ * Audio processor that handles recording, file reading, and analysis.
+ *
+ * Pass an Android [Context] to unlock ML-enhanced analysis including the
+ * HMM sequence model.  If [context] is null, all ML paths are skipped and
+ * DSP fall-backs are used.
  */
-class AudioProcessor {
-    private val audioAnalyzer = EnhancedAudioAnalyzer()
+class AudioProcessor(private val context: Context? = null) {
+    // Use context-aware analyzer so MLModelManager is initialized when available
+    private val audioAnalyzer = EnhancedAudioAnalyzer(SAMPLE_RATE, context)
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
     
@@ -249,14 +256,56 @@ class AudioProcessor {
         val audioData = readAudioFromFile(file)
         if (audioData.isEmpty()) {
             Log.w(TAG, "Empty audio data, returning default vibrato score")
-            // Return a realistic default value when file is empty or unreadable
-            return@withContext 0.65f // 65% as a reasonable default
+            return@withContext 0.65f
         }
+        audioAnalyzer.analyzeVibrato(audioData, SAMPLE_RATE).coerceIn(0f, 1f)
+    }
 
-        val vibratoScore = audioAnalyzer.analyzeVibrato(audioData, SAMPLE_RATE)
+    /**
+     * Runs the full HMM + N-gram + DTW sequence analysis on a recorded file.
+     *
+     * Returns a [SequenceAnalysisResult] with:
+     *   - HMM Forward log-likelihood and Viterbi state path insights
+     *   - DTW Pakad / Chalan / Aroha / Avaroha match scores
+     *   - Kneser-Ney n-gram LM log-likelihood
+     *   - Merged human-readable pedagogical [sequenceInsights]
+     *
+     * Returns null when the sequence model is unavailable (no context,
+     * model not yet initialised, or too few pitched frames in the recording).
+     *
+     * @param file  The recorded .m4a / audio file
+     * @param raga  The raga the student declared they were practising
+     * @param scale Scale string (e.g. \"C (261.63 Hz)\") used to derive the tonic
+     */
+    suspend fun analyzeSequenceFromFile(
+        file: File,
+        raga: String,
+        scale: String = "C (261.63 Hz)"
+    ): SequenceAnalysisResult? = withContext(Dispatchers.Default) {
+        val audioData = readAudioFromFile(file)
+        if (audioData.isEmpty()) {
+            Log.w(TAG, "analyzeSequenceFromFile: empty audio data for ${file.name}")
+            return@withContext null
+        }
+        val tonicHz = EnhancedAudioAnalyzer.scaleStringToTonicHz(scale)
+        audioAnalyzer.analyzeWithSequenceModel(audioData, SAMPLE_RATE, raga, tonicHz)
+    }
 
-        // Ensure the value is within a realistic range
-        return@withContext vibratoScore.coerceIn(0f, 1f)
+    /**
+     * Triggers one Baum-Welch EM step on the HMM for [raga], adapting
+     * the model to the student's playing style in [file].
+     *
+     * Should be called once after a confirmed practice session.
+     */
+    suspend fun confirmAndAdaptHMM(
+        file: File,
+        raga: String,
+        scale: String = "C (261.63 Hz)"
+    ) = withContext(Dispatchers.Default) {
+        val audioData = readAudioFromFile(file)
+        if (audioData.isEmpty()) return@withContext
+        val tonicHz = EnhancedAudioAnalyzer.scaleStringToTonicHz(scale)
+        audioAnalyzer.confirmAndAdaptHMM(audioData, SAMPLE_RATE, raga, tonicHz)
     }
     
     /**

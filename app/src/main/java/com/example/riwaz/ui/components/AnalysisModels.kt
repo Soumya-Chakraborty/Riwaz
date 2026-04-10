@@ -6,12 +6,16 @@ import com.example.riwaz.models.PracticeSession
 import com.example.riwaz.utils.*
 import kotlinx.coroutines.runBlocking
 
-
-
-
 /**
  * Main data holder for the entire Analysis screen.
  * Calculated based on the session and selected scale.
+ *
+ * Now includes sequence-model outputs (HMM + DTW + N-gram):
+ *   - [sequenceInsights]  — merged pedagogical feedback from all three models
+ *   - [hmmDominantState]  — dominant musical position from Viterbi decoding
+ *   - [pakadMatchScore]   — DTW Pakad phrase match quality [0-1]
+ *   - [chalanMatchScore]  — DTW Chalan movement idiom quality [0-1]
+ *   - [topRagaCandidates] — top-3 posterior raga probabilities from Bayesian ensemble
  */
 @Immutable
 data class AnalysisData(
@@ -22,44 +26,78 @@ data class AnalysisData(
     val averageStability: Float,
     val vibratoScore: Float,
     val masteryLevel: MasteryLevel,
-    val milestones: List<MasteryMilestone>
+    val milestones: List<MasteryMilestone>,
+
+    // --- Sequence model outputs (HMM + N-gram + DTW) ---
+    /** Combined pedagogical insights from HMM Viterbi, DTW, and N-gram LM */
+    val sequenceInsights: List<String> = emptyList(),
+    /** Dominant HMM hidden state name from Viterbi decoding */
+    val hmmDominantState: String = "",
+    /** DTW Pakad (signature phrase) match quality [0-1] */
+    val pakadMatchScore: Float = 0f,
+    /** DTW Chalan (movement idiom) match quality [0-1] */
+    val chalanMatchScore: Float = 0f,
+    /** Top-3 raga posterior candidates: (ragaName, probability) */
+    val topRagaCandidates: List<Pair<String, Float>> = emptyList()
 ) {
     companion object {
+
         /**
-         * Suspend function to generate analysis data from a practice session.
-         * This now processes actual recorded audio data with the selected scale.
+         * Suspend factory — generates analysis data from a practice session.
+         *
+         * When [audioProcessor] is a context-aware instance (constructed with a
+         * non-null Context), this also runs [AudioProcessor.analyzeSequenceFromFile]
+         * to populate the sequence-model fields (HMM, DTW, N-gram). It then
+         * triggers a one-step Baum-Welch online update to adapt the HMM to the
+         * learner's playing style.
+         *
+         * When audio is unavailable or the sequence model is not initialised,
+         * the sequence fields gracefully default to empty / zero values so the
+         * rest of the analysis screen is unaffected.
          */
-        suspend fun from(session: PracticeSession, scale: String = "C (261.63 Hz)"): AnalysisData {
+        suspend fun from(
+            session: PracticeSession,
+            scale: String = "C (261.63 Hz)",
+            audioProcessor: AudioProcessor = AudioProcessor()   // Default = no-ML fallback
+        ): AnalysisData {
             val ragaInfo = RagaRegistry.getRagaData(session.raga)
 
-            // Use AudioProcessor directly for real analysis
-            val audioProcessor = AudioProcessor()
-
-            // Check if the file exists and is readable
             if (!session.file.exists()) {
-                // Return default analysis data with realistic values if file doesn't exist
                 return getDefaultAnalysisData(session, ragaInfo)
             }
 
-            // Get real analysis data from the recorded file using the selected scale
-            val swarStats = audioProcessor.analyzeRecording(session.file, session.raga, scale)
-            val errors = audioProcessor.analyzeErrors(session.file, session.raga, scale)
+            // ── 1. DSP / GMM analysis (existing pipeline) ──────────────────────────
+            val swarStats       = audioProcessor.analyzeRecording(session.file, session.raga, scale)
+            val errors          = audioProcessor.analyzeErrors(session.file, session.raga, scale)
             val overallAccuracy = audioProcessor.calculateOverallAccuracy(swarStats)
-            val averageStability = audioProcessor.calculateAverageStability(swarStats)
-            val vibratoScore = audioProcessor.analyzeVibrato(session.file, scale)
+            val averageStability= audioProcessor.calculateAverageStability(swarStats)
+            val vibratoScore    = audioProcessor.analyzeVibrato(session.file, scale)
 
+            // ── 2. Sequence model (HMM + DTW + N-gram) ─────────────────────────────
+            val seqResult = audioProcessor.analyzeSequenceFromFile(
+                file  = session.file,
+                raga  = session.raga,
+                scale = scale
+            )
+
+            // Trigger Baum-Welch online update for the declared raga (fire-and-forget
+            // — result is discarded; model state is mutated in-place inside HMM engine)
+            if (seqResult != null) {
+                audioProcessor.confirmAndAdaptHMM(session.file, session.raga, scale)
+            }
+
+            // ── 3. Mastery level ────────────────────────────────────────────────────
             val level = when {
                 overallAccuracy > 0.9f -> MasteryLevel.GANDHARVA
                 overallAccuracy > 0.8f -> MasteryLevel.SADHAK
                 overallAccuracy > 0.6f -> MasteryLevel.SHISHYA
-                else -> MasteryLevel.NOVICE
+                else                   -> MasteryLevel.NOVICE
             }
 
-            // Milestone logic based on real analysis
-            val saAccuracy = swarStats.find { swar -> swar.name == "Sa" }?.accuracy ?: 0f
-            val reStability = swarStats.find { swar -> swar.name.startsWith("Re") }?.stability ?: 0f
-
-            val milestones = listOf(
+            // ── 4. Milestones ───────────────────────────────────────────────────────
+            val saAccuracy  = swarStats.find { it.name == "Sa" }?.accuracy ?: 0f
+            val reStability = swarStats.find { it.name.startsWith("Re") }?.stability ?: 0f
+            val milestones  = listOf(
                 MasteryMilestone(
                     "Perfect Sa",
                     "Hit the base note with 98% accuracy",
@@ -73,76 +111,83 @@ data class AnalysisData(
                 MasteryMilestone(
                     "Raga Purist",
                     "Avoided all forbidden notes",
-                    errors.none { error -> error.category == ErrorCategory.PITCH }
+                    errors.none { it.category == ErrorCategory.PITCH }
+                ),
+                MasteryMilestone(
+                    "Pakad Master",
+                    "Signature phrase clearly present",
+                    (seqResult?.pakadMatchScore ?: 0f) > 0.70f
                 )
             )
 
             return AnalysisData(
-                ragaInfo, errors, swarStats, overallAccuracy,
-                averageStability, vibratoScore, level, milestones
+                ragaInfo         = ragaInfo,
+                errors           = errors,
+                swarStats        = swarStats,
+                overallAccuracy  = overallAccuracy,
+                averageStability = averageStability,
+                vibratoScore     = vibratoScore,
+                masteryLevel     = level,
+                milestones       = milestones,
+                // Sequence model fields (empty when model unavailable)
+                sequenceInsights  = seqResult?.sequenceInsights ?: emptyList(),
+                hmmDominantState  = seqResult?.hmmDominantState ?: "",
+                pakadMatchScore   = seqResult?.pakadMatchScore  ?: 0f,
+                chalanMatchScore  = seqResult?.chalanScore      ?: 0f,
+                topRagaCandidates = seqResult?.topCandidates    ?: emptyList()
             )
         }
 
-        /**
-         * Returns default analysis data with realistic values when file analysis fails
-         */
-        private fun getDefaultAnalysisData(session: PracticeSession, ragaInfo: RagaRegistry.RagaData): AnalysisData {
-            // Generate some sample swar data with realistic values
+        /** Default analysis when the audio file is missing or unreadable */
+        private fun getDefaultAnalysisData(
+            session: PracticeSession,
+            ragaInfo: RagaRegistry.RagaData
+        ): AnalysisData {
             val swarStats = listOf(
-                SwarData("Sa", 0.95f, false, 261.63f, 261.6f, 0.92f),
-                SwarData("Re", 0.85f, false, 293.66f, 294.1f, 0.88f),
-                SwarData("Ga", 0.78f, true, 329.63f, 325.4f, 0.81f),  // Mistake example
-                SwarData("Ma", 0.92f, false, 349.23f, 349.3f, 0.94f),
-                SwarData("Pa", 0.89f, false, 392.00f, 391.8f, 0.87f),
-                SwarData("Dha", 0.82f, false, 440.00f, 442.1f, 0.85f),
-                SwarData("Ni", 0.75f, true, 493.88f, 489.2f, 0.79f)   // Mistake example
+                SwarData("Sa",  0.95f, false, 261.63f, 261.6f,  0.92f),
+                SwarData("Re",  0.85f, false, 293.66f, 294.1f,  0.88f),
+                SwarData("Ga",  0.78f, true,  329.63f, 325.4f,  0.81f),
+                SwarData("Ma",  0.92f, false, 349.23f, 349.3f,  0.94f),
+                SwarData("Pa",  0.89f, false, 392.00f, 391.8f,  0.87f),
+                SwarData("Dha", 0.82f, false, 440.00f, 442.1f,  0.85f),
+                SwarData("Ni",  0.75f, true,  493.88f, 489.2f,  0.79f)
             )
-
-            // Generate some sample errors
             val errors = listOf(
                 ErrorDetail(
-                    category = ErrorCategory.PITCH,
-                    swar = "Ga",
-                    severity = ErrorSeverity.MINOR,
-                    description = "Note Ga was slightly flat compared to expected frequency",
-                    correction = "Try to raise the pitch of Ga slightly to match the expected frequency"
+                    category    = ErrorCategory.PITCH,
+                    swar        = "Ga",
+                    severity    = ErrorSeverity.MINOR,
+                    description = "Note Ga was slightly flat",
+                    correction  = "Raise the pitch of Ga slightly to match the expected frequency"
                 ),
                 ErrorDetail(
-                    category = ErrorCategory.PITCH,
-                    swar = "Ni",
-                    severity = ErrorSeverity.MAJOR,
+                    category    = ErrorCategory.PITCH,
+                    swar        = "Ni",
+                    severity    = ErrorSeverity.MAJOR,
                     description = "Note Ni was significantly off-pitch",
-                    correction = "Focus on hitting the correct frequency for Ni, practice approaching it from both sides"
+                    correction  = "Focus on hitting the correct frequency for Ni"
                 )
             )
-
-            val overallAccuracy = 0.85f
-            val averageStability = 0.86f
-            val vibratoScore = 0.72f
-
-            val level = MasteryLevel.SADHAK
-
             val milestones = listOf(
-                MasteryMilestone(
-                    "Perfect Sa",
-                    "Hit the base note with 98% accuracy",
-                    swarStats.find { swar -> swar.name == "Sa" }?.accuracy ?: 0f >= 0.98f
-                ),
-                MasteryMilestone(
-                    "Vibrant Andolan",
-                    "Maintained steady oscillation on Re",
-                    swarStats.find { swar -> swar.name.startsWith("Re") }?.stability ?: 0f > 0.85f
-                ),
-                MasteryMilestone(
-                    "Raga Purist",
-                    "Avoided all forbidden notes",
-                    errors.none { error -> error.category == ErrorCategory.PITCH }
-                )
+                MasteryMilestone("Perfect Sa",    "Hit the base note with 98% accuracy",   swarStats.find { it.name == "Sa" }?.accuracy ?: 0f >= 0.98f),
+                MasteryMilestone("Vibrant Andolan","Maintained steady oscillation on Re",  swarStats.find { it.name.startsWith("Re") }?.stability ?: 0f > 0.85f),
+                MasteryMilestone("Raga Purist",   "Avoided all forbidden notes",           errors.none { it.category == ErrorCategory.PITCH }),
+                MasteryMilestone("Pakad Master",  "Signature phrase clearly present",      false)
             )
-
             return AnalysisData(
-                ragaInfo, errors, swarStats, overallAccuracy,
-                averageStability, vibratoScore, level, milestones
+                ragaInfo         = ragaInfo,
+                errors           = errors,
+                swarStats        = swarStats,
+                overallAccuracy  = 0.85f,
+                averageStability = 0.86f,
+                vibratoScore     = 0.72f,
+                masteryLevel     = MasteryLevel.SADHAK,
+                milestones       = milestones,
+                sequenceInsights  = emptyList(),
+                hmmDominantState  = "",
+                pakadMatchScore   = 0f,
+                chalanMatchScore  = 0f,
+                topRagaCandidates = emptyList()
             )
         }
     }

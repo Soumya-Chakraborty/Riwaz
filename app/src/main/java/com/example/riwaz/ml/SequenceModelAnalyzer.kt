@@ -443,7 +443,7 @@ class SequenceModelAnalyzer(
         val hmmMin  = hmmVals.minOrNull() ?: 0f
         val hmmMax  = hmmVals.maxOrNull() ?: 0f
         val hmmRange = (hmmMax - hmmMin).coerceAtLeast(1e-6f)
-        val hmmNorm = hmmScores.mapValues { (v) ->
+        val hmmNorm = hmmScores.mapValues { (_, v) ->
             if (v == Float.NEGATIVE_INFINITY) 0f else (v - hmmMin) / hmmRange
         }
 

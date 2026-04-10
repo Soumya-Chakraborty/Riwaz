@@ -6,11 +6,13 @@ The Riwaz application implements an Indian classical music analysis system that 
 ## Technical Architecture
 
 ### Core Components
-1. **AudioAnalyzer**: Primary pitch detection using autocorrelation method
+1. **AudioAnalyzer**: Primary pitch detection using autocorrelation method and Neural network (SPICE)
 2. **AdvancedMusicAnalyzer**: Microtonal and ornamentation analysis
-3. **RagaRegistry**: Raga-specific rules and characteristic phrases
-4. **AudioProcessor**: File I/O and real-time processing
-5. **ScaleManager**: Reference scale management
+3. **RagaSequenceDatabase**: Database containing zero-shot sequence profiles and DTW references for Ragas
+4. **SequenceModelAnalyzer**: Ensemble of Hidden Markov Model (HMM), DTW, and N-gram LM for evaluating long-horizon temporal adherence
+5. **RagaRegistry**: Raga-specific rules and characteristic phrases
+6. **AudioProcessor**: File I/O and real-time processing
+7. **ScaleManager**: Reference scale management
 
 ### Pitch Detection Methodology
 The algorithm uses autocorrelation with parabolic interpolation for sub-sample precision, which is appropriate for musical tones. It includes octave error correction and calculates frequency differences in cents (1/100th of a semitone) for accurate microtonal analysis.
@@ -36,10 +38,10 @@ The algorithm uses autocorrelation with parabolic interpolation for sub-sample p
 
 ### 2. Musical Inaccuracies
 
-#### Raga Grammar Validation
-- **Simplified Transitions**: The algorithm only checks adjacent note transitions, missing longer melodic patterns
-- **Missing Context**: Doesn't consider the broader melodic context when evaluating note usage
-- **Static Rules**: Raga rules are hardcoded and don't adapt to regional variations or gharana differences
+#### Raga Grammar Validation (Previously Addressed)
+- **Resolved Transition Logic**: The system previously checked only adjacent note transitions. It now features a Hidden Markov Model (HMM) and N-gram (Trigram) Language Model to evaluate broad improvisational paths.
+- **Contextual Understanding**: Dynamic Time Warping (DTW) algorithm accurately measures similarities between the singer's input and recorded signature idioms (Pakad) or Chalans regardless of temporal execution speed.
+- **Dynamic Rules via EM**: HMMs update in real-time using Baum-Welch Expectation-Maximization (EM) to adapt to the user's specific vocal tendencies and pedagogical style.
 
 #### Ornamentation Recognition
 - **Basic Detection**: Limited to simple meend and andolan detection without nuanced recognition
@@ -54,9 +56,9 @@ The algorithm uses autocorrelation with parabolic interpolation for sub-sample p
 ### 3. Cultural Misunderstandings
 
 #### Traditional Concepts
-- **Vadi-Samvadi Relationships**: The algorithm doesn't properly assess the relationship between dominant and subdominant notes
-- **Chalan Recognition**: Missing characteristic movement patterns (chalan) that define raga identity
-- **Time Theory**: Ignores the temporal aspects of raga performance (prayoga, aroha-avaroha)
+- **Vadi-Samvadi Relationships**: The algorithm tracks state persistence inside the HMM Viterbi Decoder to calculate exact time spent on dominant notes.
+- **Chalan Recognition**: Now resolved via sequence-based Dynamic Time Warping measuring the edit distance of structural phrases against pre-labeled performance sequences.
+- **Time Theory**: Ensembles apply Bayesian priors based on the current hour of the day (e.g., Yaman gets a prior boost in the evening).
 
 #### Pedagogical Approach
 - **Feedback Tone**: May provide technically correct but pedagogically inappropriate feedback
@@ -136,9 +138,8 @@ The algorithm struggles with ragas sharing similar note patterns:
 - **Structural Importance**: Lacks understanding of how these notes shape the raga
 
 ### 4. Characteristic Phrases (Pakad)
-- **Pattern Matching**: Simple substring matching rather than semantic understanding
-- **Contextual Usage**: Doesn't assess if pakads are used appropriately in context
-- **Artistic Expression**: No evaluation of how well pakads convey raga essence
+- **Resolved via DTW**: Substring matching was replaced with Dynamic Time Warping (DTW).
+- **Contextual Usage**: The system actively scans the HMM's Viterbi-predicted sequence path to see where the phrase falls contextually.
 
 ### 5. Emotional Content (Rasa)
 - **Surface-Level Assessment**: Emotion is inferred from simple heuristics

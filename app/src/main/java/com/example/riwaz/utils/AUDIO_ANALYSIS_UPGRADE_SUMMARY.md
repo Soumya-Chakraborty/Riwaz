@@ -47,6 +47,12 @@ This document outlines the implementation of state-of-the-art audio analysis alg
 - ML-enhanced recognition when available
 - Real-time processing capabilities
 
+### 8. Sequence Modeling Engine (`SequenceModelAnalyzer.kt` & `RagaHMM.kt`)
+- Ensemble Bayesian inference using Hidden Markov Models (HMM), N-gram LM, and Dynamic Time Warping (DTW)
+- Viterbi Decoder for extracting pedagogical insights ("Dominant Musical Position")
+- Baum-Welch Expectation-Maximization (EM) for online learning and model adaptation to personalized styles
+- Time-of-day Bayesian priors
+
 ## Key Features
 
 ### YIN Pitch Detection
@@ -118,6 +124,18 @@ data class EnhancedAnalysisResult(
     val ragaValidation: RagaValidationResult,
     val tonic: TonicDetectionResult,
     val overallScore: Float
+)
+```
+
+### Sequence Analysis Result (HMM + DTW + N-gram)
+```kotlin
+data class SequenceAnalysisResult(
+    val hmmLogLikelihood: Float,
+    val hmmStateInsights: List<String>,
+    val hmmDominantState: String,
+    val pakadMatchScore: Float,
+    val chalanScore: Float,
+    val topCandidates: List<Pair<String, Float>>
 )
 ```
 

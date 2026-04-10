@@ -3,10 +3,13 @@ package com.example.riwaz.utils
 import android.content.Context
 import android.util.Log
 import com.example.riwaz.ml.MLModelManager
+import com.example.riwaz.ml.SequenceAnalysisResult
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Calendar
 import kotlin.math.abs
+import kotlin.math.log2
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -54,8 +57,35 @@ class EnhancedAudioAnalyzer(
 
         // Thresholds for analysis
         private const val PITCH_DETECTION_THRESHOLD = 0.1f
-        private const val STABILITY_THRESHOLD = 0.8f
         private const val ACCURACY_THRESHOLD = 0.7f
+
+        /**
+         * Parses scale strings like \"C (261.63 Hz)\" or \"D (293.66 Hz)\" to tonic Hz.
+         * Falls back to C (261.63 Hz) if the string cannot be parsed.
+         */
+        fun scaleStringToTonicHz(scale: String): Float {
+            // Try to extract Hz from parentheses first: "X (NNN.NN Hz)"
+            val match = Regex("\\(([\\d.]+)\\s*Hz\\)").find(scale)
+            if (match != null) {
+                return match.groupValues[1].toFloatOrNull() ?: 261.63f
+            }
+            // Fallback: note-name map
+            return when {
+                scale.startsWith("C#") || scale.startsWith("Db") -> 277.18f
+                scale.startsWith("C")  -> 261.63f
+                scale.startsWith("D#") || scale.startsWith("Eb") -> 311.13f
+                scale.startsWith("D")  -> 293.66f
+                scale.startsWith("E")  -> 329.63f
+                scale.startsWith("F#") || scale.startsWith("Gb") -> 369.99f
+                scale.startsWith("F")  -> 349.23f
+                scale.startsWith("G#") || scale.startsWith("Ab") -> 415.30f
+                scale.startsWith("G")  -> 392.00f
+                scale.startsWith("A#") || scale.startsWith("Bb") -> 466.16f
+                scale.startsWith("A")  -> 440.00f
+                scale.startsWith("B")  -> 493.88f
+                else -> 261.63f
+            }
+        }
     }
 
     // ML Model Manager (initialized lazily if context provided)
@@ -174,7 +204,77 @@ class EnhancedAudioAnalyzer(
     fun getMLStatus(): String {
         return mlModelManager?.getStatusSummary() ?: "ML models not initialized (no context)"
     }
-    
+
+    /**
+     * Runs the full HMM + N-gram + DTW sequence analysis on [audioData].
+     *
+     * This is the missing bridge: it extracts a pitch track from [audioData]
+     * using the existing [detectPitch] pipeline, then forwards it to
+     * [MLModelManager.analyzeSequence] which runs the three-model ensemble
+     * (HMM Forward, Viterbi, Baum-Welch, DTW, Kneser-Ney n-gram).
+     *
+     * @param audioData  Raw PCM float samples (mono)
+     * @param sampleRate Sample rate of [audioData]
+     * @param raga       The declared raga for the session (used only for post-analysis confirmation)
+     * @param tonicHz    Tonic frequency in Hz (derived from [scaleStringToTonicHz])
+     * @return [SequenceAnalysisResult] with HMM scores, Viterbi state path insights,
+     *         DTW pakad/chalan/aroha/avaroha scores, n-gram LM likelihood, and
+     *         human-readable pedagogical insights; or null if sequence model unavailable.
+     */
+    fun analyzeWithSequenceModel(
+        audioData: FloatArray,
+        sampleRate: Int,
+        raga: String,
+        tonicHz: Float
+    ): SequenceAnalysisResult? {
+        val manager = mlModelManager ?: return null
+        if (!manager.isReady() || !manager.isSequenceModelAvailable) return null
+
+        // --- Step 1: extract pitch track at 125 ms hop (8 frames/sec) ---
+        val windowSamples = sampleRate / 8   // 125 ms window
+        val hopSamples    = windowSamples / 2 // 50% overlap → 16 Hz frame rate
+        val pitchTrack    = mutableListOf<Float>()
+
+        var idx = 0
+        while (idx + windowSamples <= audioData.size) {
+            val frame = audioData.copyOfRange(idx, idx + windowSamples)
+            val hz    = detectPitch(frame, sampleRate)   // ML or pYIN
+            if (hz > 40f) pitchTrack.add(hz)            // discard silence / sub-bass
+            idx += hopSamples
+        }
+
+        if (pitchTrack.size < 10) return null  // Not enough pitched frames
+
+        Log.d(TAG, "Sequence model: ${pitchTrack.size} pitched frames extracted for $raga")
+
+        // --- Step 2: pass to MLModelManager which calls SequenceModelAnalyzer ---
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        return manager.analyzeSequence(pitchTrack, tonicHz, hourOfDay = hour)
+    }
+
+    /**
+     * Online Baum-Welch update — call after the user has confirmed they were playing [raga].
+     * Adapts the HMM A and B matrices for that raga based on the pitch track in [audioData].
+     */
+    fun confirmAndAdaptHMM(audioData: FloatArray, sampleRate: Int, raga: String, tonicHz: Float) {
+        val manager = mlModelManager ?: return
+        if (!manager.isReady() || !manager.isSequenceModelAvailable) return
+
+        val windowSamples = sampleRate / 8
+        val hopSamples    = windowSamples / 2
+        val pitchTrack    = mutableListOf<Float>()
+        var idx = 0
+        while (idx + windowSamples <= audioData.size) {
+            val frame = audioData.copyOfRange(idx, idx + windowSamples)
+            val hz    = detectPitch(frame, sampleRate)
+            if (hz > 40f) pitchTrack.add(hz)
+            idx += hopSamples
+        }
+        if (pitchTrack.size < 10) return
+        manager.confirmRagaAndUpdate(raga, pitchTrack, tonicHz)
+        Log.d(TAG, "HMM adapted online for raga=$raga with ${pitchTrack.size} frames")
+    }
+
     // Data classes for ML results
     data class SwarClassificationResult(
         val swar: String,

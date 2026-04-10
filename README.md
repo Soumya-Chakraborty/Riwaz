@@ -50,10 +50,14 @@ graph TD
         Pitch --> SwarEngine["Swar Recognition Engine"]
         SwarEngine --> Context["Raga Context Rules"]
         Context --> Comparison["Accuracy & Error Logic"]
+        
+        Pitch --> SequenceModel["Sequence Model (HMM + DTW + N-Gram)"]
+        SequenceModel --> Viterbi["Viterbi Decoding (Pedagogical Insights)"]
+        SequenceModel --> BaumWelch["Baum-Welch (Online Learning)"]
     end
     
     Comparison --> UI[Real-time Feedback UI]
-    Comparison --> Session[Session Statistics]
+    Viterbi --> Session[Session Statistics & Melodic Analysis]
 ```
 
 ### Data Flow
@@ -91,6 +95,12 @@ Riwaz uses a hybrid approach for maximum reliability:
 3.  **Swar & Raga Engine**
     - Maps frequency to Swars based on the user's selected **Root Note (Sa)**.
     - Validates notes against Raga rules (Ascending/Descending patterns, Forbidden notes).
+
+4.  **Sequence Modeling Ensemble**
+    - Uses a custom **Hidden Markov Model (HMM)** engine inside pure Kotlin log-space.
+    - Captures state transitions contextually using **Viterbi Decoding** for pedagogical insights.
+    - Matches idiomatic movements and signature phrases (Pakad/Chalan) through **Dynamic Time Warping (DTW)**.
+    - Learns the user's style dynamically online using **Baum-Welch Expectation-Maximization**.
 
 ---
 

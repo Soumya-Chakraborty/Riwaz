@@ -943,3 +943,246 @@ private fun ScaleOption(
         }
     }
 }
+
+// =============================================================================
+//  HMM Melodic Analysis Card
+// =============================================================================
+
+/**
+ * Displays the output of the three-model sequence analysis pipeline:
+ *   - HMM Viterbi dominant musical state
+ *   - DTW Pakad and Chalan phrase match scores
+ *   - Top-3 raga posterior candidates
+ *   - Combined pedagogical insights (N-gram + DTW + HMM Viterbi)
+ *
+ * This card is only rendered in [AnalysisView] when [AnalysisData.sequenceInsights]
+ * is non-empty — i.e. when the HMM sequence model successfully processed the audio.
+ */
+@Composable
+fun HmmMelodicAnalysisCard(
+    analysisData: AnalysisData,
+    saffronColor: Color
+) {
+    val tealColor   = Color(0xFF26C6DA)
+    val purpleColor = Color(0xFFAB47BC)
+
+    AnalysisCard(
+        title = "Melodic Sequence Analysis",
+        icon  = Icons.Default.GraphicEq,
+        saffronColor = saffronColor
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+            // ── Viterbi dominant state banner ─────────────────────────────────
+            if (analysisData.hmmDominantState.isNotBlank()) {
+                HmmStateBanner(
+                    dominantState = analysisData.hmmDominantState,
+                    tealColor     = tealColor
+                )
+            }
+
+            // ── Phrase match score bars (Pakad + Chalan) ─────────────────────
+            if (analysisData.pakadMatchScore > 0f || analysisData.chalanMatchScore > 0f) {
+                HmmScoreBars(
+                    pakadScore   = analysisData.pakadMatchScore,
+                    chalanScore  = analysisData.chalanMatchScore,
+                    saffronColor = saffronColor,
+                    tealColor    = tealColor
+                )
+            }
+
+            // ── Top raga candidates ───────────────────────────────────────────
+            if (analysisData.topRagaCandidates.isNotEmpty()) {
+                HmmRagaCandidates(
+                    candidates   = analysisData.topRagaCandidates,
+                    saffronColor = saffronColor,
+                    purpleColor  = purpleColor
+                )
+            }
+
+            // ── Pedagogical insights ──────────────────────────────────────────
+            if (analysisData.sequenceInsights.isNotEmpty()) {
+                HorizontalDivider(color = Color.White.copy(0.08f))
+                HmmInsightsList(
+                    insights     = analysisData.sequenceInsights,
+                    saffronColor = saffronColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HmmStateBanner(dominantState: String, tealColor: Color) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.horizontalGradient(listOf(tealColor.copy(0.15f), Color.Transparent)),
+                RoundedCornerShape(10.dp)
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.Insights,
+            contentDescription = null,
+            tint    = tealColor,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(
+                "Dominant Musical Position",
+                color    = tealColor.copy(0.8f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.8.sp
+            )
+            Text(
+                dominantState,
+                color      = Color.White,
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun HmmScoreBars(
+    pakadScore: Float,
+    chalanScore: Float,
+    saffronColor: Color,
+    tealColor: Color
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            "Phrase Recognition",
+            color    = Color.White.copy(0.5f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp
+        )
+        ScoreBar(label = "Pakad (Signature Phrase)", score = pakadScore, color = saffronColor)
+        ScoreBar(label = "Chalan (Movement Idioms)", score = chalanScore, color = tealColor)
+    }
+}
+
+@Composable
+private fun ScoreBar(label: String, score: Float, color: Color) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, color = Color.White.copy(0.8f), fontSize = 12.sp)
+            Text(
+                "${(score * 100).toInt()}%",
+                color      = color,
+                fontSize   = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        LinearProgressIndicator(
+            progress    = { score },
+            modifier    = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(50)),
+            color       = color,
+            trackColor  = Color.White.copy(0.08f)
+        )
+    }
+}
+
+@Composable
+private fun HmmRagaCandidates(
+    candidates: List<Pair<String, Float>>,
+    saffronColor: Color,
+    purpleColor: Color
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Raga Posterior Probabilities",
+            color    = Color.White.copy(0.5f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp
+        )
+        candidates.forEachIndexed { index, (ragaName, prob) ->
+            val barColor = when (index) {
+                0    -> saffronColor
+                1    -> purpleColor
+                else -> Color.White.copy(0.4f)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Rank badge
+                Surface(
+                    modifier  = Modifier.size(22.dp),
+                    shape     = RoundedCornerShape(6.dp),
+                    color     = barColor.copy(0.15f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            "${index + 1}",
+                            color      = barColor,
+                            fontSize   = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(ragaName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(3.dp))
+                    LinearProgressIndicator(
+                        progress   = { prob },
+                        modifier   = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(50)),
+                        color      = barColor,
+                        trackColor = Color.White.copy(0.06f)
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "${(prob * 100).toInt()}%",
+                    color      = barColor,
+                    fontSize   = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier   = Modifier.width(36.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HmmInsightsList(insights: List<String>, saffronColor: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Sequence Insights",
+            color    = Color.White.copy(0.5f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp
+        )
+        insights.forEach { insight ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(0.03f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    insight,
+                    color      = Color.White.copy(0.85f),
+                    fontSize   = 13.sp,
+                    lineHeight = 19.sp,
+                    modifier   = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
