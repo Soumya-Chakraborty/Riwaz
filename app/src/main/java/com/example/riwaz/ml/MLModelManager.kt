@@ -28,17 +28,20 @@ class MLModelManager(private val context: Context) {
     private var ragaClassifier: GMMRagaClassifier? = null
     private var swarClassifier: CNNSwarClassifier? = null
     private var featureExtractor: FeatureExtractor? = null
+    private var sequenceAnalyzer: SequenceModelAnalyzer? = null
     
     // Initialization state
     private var isInitialized = false
     private var initJob: Job? = null
-    
+
     // Model availability
     var isPitchModelAvailable = false
         private set
     var isRagaModelAvailable = false
         private set
     var isSwarModelAvailable = false
+        private set
+    var isSequenceModelAvailable = false
         private set
     
     data class MLAnalysisResult(
@@ -73,12 +76,17 @@ class MLModelManager(private val context: Context) {
             ragaClassifier = GMMRagaClassifier()
             isRagaModelAvailable = true
             Log.d(TAG, "Raga classifier initialized")
-            
+
             // Initialize CNN swar classifier
             swarClassifier = CNNSwarClassifier(context)
             isSwarModelAvailable = swarClassifier?.initialize() == true
             Log.d(TAG, "Swar classifier initialized: $isSwarModelAvailable")
-            
+
+            // Initialize sequence model analyzer (pure Kotlin — always available)
+            sequenceAnalyzer = SequenceModelAnalyzer()
+            isSequenceModelAvailable = true
+            Log.d(TAG, "Sequence model analyzer initialized")
+
             isInitialized = true
             Log.d(TAG, "ML models initialization complete")
             true
@@ -168,6 +176,39 @@ class MLModelManager(private val context: Context) {
     ): GMMRagaClassifier.ClassificationResult? {
         return ragaClassifier?.classifyRaga(pitches, tonicFrequency)
     }
+
+    /**
+     * Run full sequence-model analysis:
+     * - N-gram language model (Kneser-Ney smoothed trigrams)
+     * - DTW-based Pakad / Chalan / Aroha / Avaroha matching
+     * - Elman RNN melodic context scoring
+     * - Bayesian ensemble combining all three signals
+     *
+     * @param pitches       Ordered list of detected pitch frequencies (Hz)
+     * @param tonicFrequency Reference Sa frequency (Hz)
+     * @param hourOfDay     Optional hour (0-23) for time-of-day raga prior; -1 disables
+     * @return [SequenceAnalysisResult] containing raga posterior, phrase matches,
+     *         and pedagogical insights, or null if the analyzer is not ready.
+     */
+    fun analyzeSequence(
+        pitches: List<Float>,
+        tonicFrequency: Float,
+        hourOfDay: Int = -1
+    ): SequenceAnalysisResult? {
+        return sequenceAnalyzer?.analyze(pitches, tonicFrequency, hourOfDay)
+    }
+
+    /**
+     * Online update — call after the user confirms the raga they were practicing
+     * to refine the sequence model's n-gram counts and RNN target state.
+     */
+    fun confirmRagaAndUpdate(
+        confirmedRaga: String,
+        pitches: List<Float>,
+        tonicFrequency: Float
+    ) {
+        sequenceAnalyzer?.onlineUpdate(confirmedRaga, pitches, tonicFrequency)
+    }
     
     /**
      * Validate if notes match raga rules
@@ -213,7 +254,9 @@ class MLModelManager(private val context: Context) {
         swarClassifier = null
         ragaClassifier = null
         featureExtractor = null
+        sequenceAnalyzer = null
         isInitialized = false
+        isSequenceModelAvailable = false
         instance = null
     }
     
@@ -230,7 +273,8 @@ class MLModelManager(private val context: Context) {
             append("ML Models Status:\n")
             append("- Pitch Detector: ${if (isPitchModelAvailable) "Neural Network" else "DSP Fallback"}\n")
             append("- Raga Classifier: GMM (${getAvailableRagas().size} ragas)\n")
-            append("- Swar Classifier: ${if (isSwarModelAvailable) "CNN" else "DSP Fallback"}")
+            append("- Swar Classifier: ${if (isSwarModelAvailable) "CNN" else "DSP Fallback"}\n")
+            append("- Sequence Analyzer: ${if (isSequenceModelAvailable) "N-gram LM + DTW + HMM (Forward/Viterbi/Baum-Welch, active)" else "Not initialized"}")
         }
     }
 }

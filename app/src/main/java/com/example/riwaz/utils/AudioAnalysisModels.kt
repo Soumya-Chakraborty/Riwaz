@@ -1,5 +1,7 @@
 package com.example.riwaz.utils
 
+import com.example.riwaz.ml.SequenceAnalysisResult
+
 /**
  * Data classes for audio analysis results
  */
@@ -78,7 +80,9 @@ data class RagaValidationResult(
     val characteristicPhrases: Float,
     val noteHierarchy: Float,
     val movementPatterns: Float,
-    val suggestions: List<String>
+    val suggestions: List<String>,
+    /** Populated when the sequence model has been run (may be null for short sessions) */
+    val sequenceAnalysis: SequenceAnalysisResult? = null
 )
 
 /**
