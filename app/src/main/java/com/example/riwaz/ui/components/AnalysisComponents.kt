@@ -29,6 +29,43 @@ import com.example.riwaz.utils.*
 import kotlin.math.sin
 
 /**
+ * A small pill badge indicating the UI element is evaluated by the HMM sequence
+ * model (Forward/Viterbi/Baum-Welch) rather than the static DSP rule set.
+ *
+ * Shown next to:
+ *  - The "Pakad Master" milestone in [MilestonesCard]
+ *  - The title row of [HmmMelodicAnalysisCard]
+ */
+@Composable
+fun HmmBadge() {
+    val teal = Color(0xFF26C6DA)
+    Row(
+        modifier = Modifier
+            .background(
+                brush = Brush.horizontalGradient(listOf(teal.copy(0.18f), teal.copy(0.10f))),
+                shape = RoundedCornerShape(50)
+            )
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.AutoAwesome,
+            contentDescription = null,
+            tint = teal,
+            modifier = Modifier.size(9.dp)
+        )
+        Spacer(Modifier.width(3.dp))
+        Text(
+            "HMM",
+            color = teal,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 0.5.sp
+        )
+    }
+}
+
+/**
  * Top app bar for the Analysis screen, showing session info and scale actions.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -196,13 +233,22 @@ fun MilestonesCard(milestones: List<MasteryMilestone>, saffronColor: Color) {
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            milestone.title,
-                            color = if (milestone.isAchieved) Color.White else Color.White.copy(0.5f),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                milestone.title,
+                                color = if (milestone.isAchieved) Color.White else Color.White.copy(0.5f),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            // Show HMM badge only for milestones evaluated by the sequence model
+                            if (milestone.poweredByHmm) {
+                                HmmBadge()
+                            }
+                        }
                         Text(
                             milestone.description,
                             color = Color.White.copy(0.4f),
@@ -966,49 +1012,110 @@ fun HmmMelodicAnalysisCard(
     val tealColor   = Color(0xFF26C6DA)
     val purpleColor = Color(0xFFAB47BC)
 
-    AnalysisCard(
-        title = "Melodic Sequence Analysis",
-        icon  = Icons.Default.GraphicEq,
-        saffronColor = saffronColor
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-
-            // ── Viterbi dominant state banner ─────────────────────────────────
-            if (analysisData.hmmDominantState.isNotBlank()) {
-                HmmStateBanner(
-                    dominantState = analysisData.hmmDominantState,
-                    tealColor     = tealColor
-                )
-            }
-
-            // ── Phrase match score bars (Pakad + Chalan) ─────────────────────
-            if (analysisData.pakadMatchScore > 0f || analysisData.chalanMatchScore > 0f) {
-                HmmScoreBars(
-                    pakadScore   = analysisData.pakadMatchScore,
-                    chalanScore  = analysisData.chalanMatchScore,
-                    saffronColor = saffronColor,
-                    tealColor    = tealColor
-                )
-            }
-
-            // ── Top raga candidates ───────────────────────────────────────────
-            if (analysisData.topRagaCandidates.isNotEmpty()) {
-                HmmRagaCandidates(
-                    candidates   = analysisData.topRagaCandidates,
-                    saffronColor = saffronColor,
-                    purpleColor  = purpleColor
-                )
-            }
-
-            // ── Pedagogical insights ──────────────────────────────────────────
-            if (analysisData.sequenceInsights.isNotEmpty()) {
-                HorizontalDivider(color = Color.White.copy(0.08f))
-                HmmInsightsList(
-                    insights     = analysisData.sequenceInsights,
-                    saffronColor = saffronColor
-                )
-            }
+    // Custom card header with HMM badge baked in
+    Column {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                Icons.Default.GraphicEq,
+                contentDescription = null,
+                tint = saffronColor,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                "Melodic Sequence Analysis",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+            // Powered-by badge — always visible on this card
+            HmmBadge()
         }
+        Spacer(Modifier.height(12.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White.copy(0.02f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, tealColor.copy(0.15f))
+        ) {
+            Box(modifier = Modifier.padding(16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+                    if (analysisData.sequenceInsights.isEmpty()) {
+                        // ── Placeholder when HMM hasn't run yet ──────────────
+                        HmmUnavailablePlaceholder(tealColor = tealColor)
+                    } else {
+                        // ── Viterbi dominant state banner ─────────────────────
+                        if (analysisData.hmmDominantState.isNotBlank()) {
+                            HmmStateBanner(
+                                dominantState = analysisData.hmmDominantState,
+                                tealColor     = tealColor
+                            )
+                        }
+
+                        // ── Phrase match score bars (Pakad + Chalan) ──────────
+                        if (analysisData.pakadMatchScore > 0f || analysisData.chalanMatchScore > 0f) {
+                            HmmScoreBars(
+                                pakadScore   = analysisData.pakadMatchScore,
+                                chalanScore  = analysisData.chalanMatchScore,
+                                saffronColor = saffronColor,
+                                tealColor    = tealColor
+                            )
+                        }
+
+                        // ── Top raga candidates ───────────────────────────────
+                        if (analysisData.topRagaCandidates.isNotEmpty()) {
+                            HmmRagaCandidates(
+                                candidates   = analysisData.topRagaCandidates,
+                                saffronColor = saffronColor,
+                                purpleColor  = purpleColor
+                            )
+                        }
+
+                        // ── Pedagogical insights ──────────────────────────────
+                        HorizontalDivider(color = Color.White.copy(0.08f))
+                        HmmInsightsList(
+                            insights     = analysisData.sequenceInsights,
+                            saffronColor = saffronColor
+                        )
+                    }
+                }   // end Column (content)
+            }       // end Box
+        }           // end Surface
+    }               // end outer Column
+}                   // end HmmMelodicAnalysisCard
+
+/** Shown inside [HmmMelodicAnalysisCard] when the sequence model hasn't produced results. */
+@Composable
+private fun HmmUnavailablePlaceholder(tealColor: Color) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(
+            Icons.Default.AutoAwesome,
+            contentDescription = null,
+            tint    = tealColor.copy(0.4f),
+            modifier = Modifier.size(32.dp)
+        )
+        Text(
+            "Sequence analysis not available",
+            color      = Color.White.copy(0.5f),
+            fontSize   = 13.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            "Record a raga session to see HMM Viterbi insights,\n" +
+            "Pakad phrase scores, and raga posterior probabilities.",
+            color      = Color.White.copy(0.35f),
+            fontSize   = 11.sp,
+            lineHeight = 17.sp
+        )
     }
 }
 

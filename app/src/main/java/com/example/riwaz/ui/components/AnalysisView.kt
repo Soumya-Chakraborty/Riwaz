@@ -207,13 +207,11 @@ private fun AnalysisContent(
         // Positive reinforcement milestones
         MilestonesCard(milestones = analysisData.milestones, saffronColor = saffronColor)
 
-        // ── HMM Melodic Analysis card (only when sequence model ran successfully) ──
-        if (analysisData.sequenceInsights.isNotEmpty()) {
-            HmmMelodicAnalysisCard(
-                analysisData = analysisData,
-                saffronColor = saffronColor
-            )
-        }
+        // ── HMM Melodic Analysis card — always present, shows placeholder when model hasn't run
+        HmmMelodicAnalysisCard(
+            analysisData = analysisData,
+            saffronColor = saffronColor
+        )
 
         // Error breakdown
         AnalysisCard(

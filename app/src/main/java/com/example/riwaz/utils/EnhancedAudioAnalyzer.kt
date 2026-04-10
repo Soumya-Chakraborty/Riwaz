@@ -221,14 +221,24 @@ class EnhancedAudioAnalyzer(
      *         DTW pakad/chalan/aroha/avaroha scores, n-gram LM likelihood, and
      *         human-readable pedagogical insights; or null if sequence model unavailable.
      */
-    fun analyzeWithSequenceModel(
+    suspend fun analyzeWithSequenceModel(
         audioData: FloatArray,
         sampleRate: Int,
         raga: String,
         tonicHz: Float
     ): SequenceAnalysisResult? {
         val manager = mlModelManager ?: return null
-        if (!manager.isReady() || !manager.isSequenceModelAvailable) return null
+
+        // Ensure the model is fully initialized before we check status.
+        // initialize() is idempotent — it is a no-op if already done.
+        if (!manager.isReady()) {
+            val ok = manager.initialize()
+            if (!ok) {
+                Log.w(TAG, "MLModelManager failed to initialize; skipping sequence analysis")
+                return null
+            }
+        }
+        if (!manager.isSequenceModelAvailable) return null
 
         // --- Step 1: extract pitch track at 125 ms hop (8 frames/sec) ---
         val windowSamples = sampleRate / 8   // 125 ms window
@@ -243,7 +253,10 @@ class EnhancedAudioAnalyzer(
             idx += hopSamples
         }
 
-        if (pitchTrack.size < 10) return null  // Not enough pitched frames
+        if (pitchTrack.size < 10) {
+            Log.w(TAG, "Not enough pitched frames (${pitchTrack.size}) for sequence model")
+            return null
+        }
 
         Log.d(TAG, "Sequence model: ${pitchTrack.size} pitched frames extracted for $raga")
 
@@ -256,8 +269,9 @@ class EnhancedAudioAnalyzer(
      * Online Baum-Welch update — call after the user has confirmed they were playing [raga].
      * Adapts the HMM A and B matrices for that raga based on the pitch track in [audioData].
      */
-    fun confirmAndAdaptHMM(audioData: FloatArray, sampleRate: Int, raga: String, tonicHz: Float) {
+    suspend fun confirmAndAdaptHMM(audioData: FloatArray, sampleRate: Int, raga: String, tonicHz: Float) {
         val manager = mlModelManager ?: return
+        if (!manager.isReady()) { manager.initialize() }
         if (!manager.isReady() || !manager.isSequenceModelAvailable) return
 
         val windowSamples = sampleRate / 8

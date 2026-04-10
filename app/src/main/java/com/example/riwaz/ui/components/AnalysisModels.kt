@@ -116,7 +116,8 @@ data class AnalysisData(
                 MasteryMilestone(
                     "Pakad Master",
                     "Signature phrase clearly present",
-                    (seqResult?.pakadMatchScore ?: 0f) > 0.70f
+                    (seqResult?.pakadMatchScore ?: 0f) > 0.70f,
+                    poweredByHmm = true   // evaluated by DTW/HMM, not DSP
                 )
             )
 
@@ -172,7 +173,9 @@ data class AnalysisData(
                 MasteryMilestone("Perfect Sa",    "Hit the base note with 98% accuracy",   swarStats.find { it.name == "Sa" }?.accuracy ?: 0f >= 0.98f),
                 MasteryMilestone("Vibrant Andolan","Maintained steady oscillation on Re",  swarStats.find { it.name.startsWith("Re") }?.stability ?: 0f > 0.85f),
                 MasteryMilestone("Raga Purist",   "Avoided all forbidden notes",           errors.none { it.category == ErrorCategory.PITCH }),
-                MasteryMilestone("Pakad Master",  "Signature phrase clearly present",      false)
+                MasteryMilestone("Pakad Master",  "Signature phrase clearly present",      false,
+                    poweredByHmm = true   // evaluated by DTW/HMM, not DSP
+                )
             )
             return AnalysisData(
                 ragaInfo         = ragaInfo,
@@ -183,11 +186,19 @@ data class AnalysisData(
                 vibratoScore     = 0.72f,
                 masteryLevel     = MasteryLevel.SADHAK,
                 milestones       = milestones,
-                sequenceInsights  = emptyList(),
-                hmmDominantState  = "",
-                pakadMatchScore   = 0f,
-                chalanMatchScore  = 0f,
-                topRagaCandidates = emptyList()
+                sequenceInsights  = listOf(
+                    "You lingered beautifully on the Vadi, showing excellent stability.",
+                    "You jumped too quickly through the Avaroha; try to resolve slower.",
+                    "Your Pakad attempt was recognized, but timing was slightly rushed."
+                ),
+                hmmDominantState  = "Vadi Expansion",
+                pakadMatchScore   = 0.82f,
+                chalanMatchScore  = 0.76f,
+                topRagaCandidates = listOf(
+                    Pair(ragaInfo.name, 0.88f),
+                    Pair("Kalyan", 0.10f),
+                    Pair("Bhupali", 0.02f)
+                )
             )
         }
     }
